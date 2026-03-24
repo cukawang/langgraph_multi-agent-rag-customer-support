@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request, Depends, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -8,24 +10,43 @@ import uuid
 import os
 import sys
 
-# Add the customer_support_chat directory to the path
+# Add the project root to path so customer_support_chat is importable
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
+
+# Load environment variables before any app imports
+load_dotenv()
 
 from customer_support_chat.app.services.chat_service import process_user_message
 from .core.user_data_manager import (
-    get_user_session, 
-    update_user_chat_history, 
-    get_pending_action, 
-    set_user_decision, 
-    clear_pending_action, 
+    get_user_session,
+    update_user_chat_history,
+    get_pending_action,
+    set_user_decision,
+    clear_pending_action,
     clear_user_decision,
-    get_operation_log
+    get_operation_log,
 )
 
-# Load environment variables
-load_dotenv()
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    FastAPI 应用生命周期管理：
+      启动时初始化高德地图 MCP 客户端并重新编译图；
+      关闭时释放 MCP 连接。
+    """
+    from customer_support_chat.app.services.tools.amap_mcp import startup, shutdown, get_amap_tools
+    from customer_support_chat.app.graph import initialize
+
+    amap_tools = await startup()
+    initialize(amap_tools)
+
+    yield  # ← 应用正常运行期间
+
+    await shutdown()
+
+
+app = FastAPI(lifespan=lifespan)
 
 # Mount static files directory
 app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static")), name="static")

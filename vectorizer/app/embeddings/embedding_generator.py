@@ -8,14 +8,16 @@ settings = get_settings()
 # Configure OpenAI embeddings with embedding-specific configuration
 if settings.EMBEDDING_BASE_URL:
     embeddings = OpenAIEmbeddings(
-        model="text-embedding-3-small",
+        model="text-embedding-v4",
         openai_api_key=settings.EMBEDDING_API_KEY,
-        openai_api_base=settings.EMBEDDING_BASE_URL
+        openai_api_base=settings.EMBEDDING_BASE_URL,
+        check_embedding_ctx_length=False
     )
 else:
     embeddings = OpenAIEmbeddings(
-        model="text-embedding-3-small",
-        openai_api_key=settings.EMBEDDING_API_KEY
+        model="text-embedding-v4",
+        openai_api_key=settings.EMBEDDING_API_KEY,
+        check_embedding_ctx_length=False
     )
 
 def generate_embedding(content: Union[str, List[str]]) -> Union[List[float], List[List[float]]]:

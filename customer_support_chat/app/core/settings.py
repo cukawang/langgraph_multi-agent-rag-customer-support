@@ -21,18 +21,12 @@ class Config:
     RECREATE_COLLECTIONS: bool = environ.get("RECREATE_COLLECTIONS", "False")
     LIMIT_ROWS: int = environ.get("LIMIT_ROWS", "100")
     
-    # WooCommerce API Settings
-    # WOOCOMMERCE_API_URL should be the WordPress base URL (e.g., "https://yourstore.com")
-    # The system will automatically append "/wp-json/wc/v3" to create the full API endpoint
-    WOOCOMMERCE_CONSUMER_KEY: str = environ.get("WOOCOMMERCE_CONSUMER_KEY", "")
-    WOOCOMMERCE_CONSUMER_SECRET: str = environ.get("WOOCOMMERCE_CONSUMER_SECRET", "")
-    WOOCOMMERCE_API_URL: str = environ.get("WOOCOMMERCE_API_URL", "")
-    
-    # Form Submission API Settings
-    FORM_SUBMISSION_API_URL: str = environ.get("FORM_SUBMISSION_API_URL", "")
-    
-    # Blog Search API Settings
-    BLOG_SEARCH_API_URL: str = environ.get("BLOG_SEARCH_API_URL", "")
+    # Amap (高德地图) MCP service via DashScope
+    DASHSCOPE_API_KEY: str = environ.get("DASHSCOPE_API_KEY", "")
+    # BM25 index dir for hybrid retrieval (must match vectorizer output)
+    BM25_INDEX_DIR: str = environ.get("BM25_INDEX_DIR", "./customer_support_chat/data/bm25")
+    # Reranker model (sentence-transformers CrossEncoder)
+    RERANKER_MODEL: str = environ.get("RERANKER_MODEL", "BAAI/bge-reranker-base")
 
 def get_settings():
     return Config()

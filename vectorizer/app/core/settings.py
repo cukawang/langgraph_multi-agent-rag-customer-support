@@ -20,6 +20,8 @@ class Config:
     QDRANT_URL: str = environ.get("QDRANT_URL", "http://localhost:6333")
     QDRANT_KEY: str = environ.get("QDRANT_KEY", "")
     RECREATE_COLLECTIONS: bool = environ.get("RECREATE_COLLECTIONS", "False")
+    # BM25 index output dir for hybrid retrieval (used by vectorizer and customer_support_chat)
+    BM25_INDEX_DIR: str = environ.get("BM25_INDEX_DIR", "./customer_support_chat/data/bm25")
 
 def get_settings():
     return Config()

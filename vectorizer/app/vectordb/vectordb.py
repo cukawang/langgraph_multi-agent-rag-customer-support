@@ -1,7 +1,8 @@
 import os
+import re
+import pickle
 import sqlite3
 import uuid
-import re
 import requests
 from tqdm import tqdm
 from qdrant_client import QdrantClient
@@ -15,6 +16,12 @@ import aiohttp
 from tqdm.asyncio import tqdm_asyncio
 from more_itertools import chunked
 import time
+
+try:
+    from rank_bm25 import BM25Okapi
+    _BM25_AVAILABLE = True
+except ImportError:
+    _BM25_AVAILABLE = False
 
 settings = get_settings()
 
@@ -114,12 +121,37 @@ class VectorDB:
                 return embedding_size
             else:
                 # For API embeddings, use standard OpenAI dimensions
-                # text-embedding-3-small: 1536, text-embedding-3-large: 3072, ada-002: 1536
-                return 1536
+                # text-embedding-v4: 1024, text-embedding-3-large: 3072, ada-002: 1536
+                return 1024
         except Exception as e:
             logger.warning(f"Could not determine embedding dimensions: {str(e)}")
-            logger.info("Defaulting to 1536 dimensions")
-            return 1536
+            logger.info("Defaulting to 1024 dimensions")
+            return 1024
+
+    @staticmethod
+    def _tokenize_for_bm25(text: str):
+        """Tokenize for BM25 (alphanumeric + CJK as single chars)."""
+        if not text or not isinstance(text, str):
+            return []
+        # Match words (letters/digits) and single CJK chars
+        return re.findall(r"[a-zA-Z0-9]+|[\u4e00-\u9fff]", text.lower())
+
+    def _build_and_save_bm25_index(self, doc_ids: list, contents: list):
+        """Build BM25 index from (doc_ids, contents) and save to BM25_INDEX_DIR."""
+        if not _BM25_AVAILABLE:
+            logger.warning("rank_bm25 not installed; skipping BM25 index build.")
+            return
+        if not doc_ids or not contents or len(doc_ids) != len(contents):
+            logger.warning("Empty or mismatched doc_ids/contents; skipping BM25 index.")
+            return
+        index_dir = getattr(settings, "BM25_INDEX_DIR", "./customer_support_chat/data/bm25")
+        os.makedirs(index_dir, exist_ok=True)
+        tokenized = [self._tokenize_for_bm25(c) for c in contents]
+        bm25 = BM25Okapi(tokenized)
+        path = os.path.join(index_dir, f"{self.collection_name}.pkl")
+        with open(path, "wb") as f:
+            pickle.dump({"doc_ids": doc_ids, "contents": contents, "tokenized_corpus": tokenized, "bm25": bm25}, f)
+        logger.info(f"Saved BM25 index to {path} ({len(doc_ids)} docs)")
 
     def format_content(self, data, collection_name):
         # Implement formatting logic for different collections
@@ -164,8 +196,8 @@ class VectorDB:
             base_url = base_url[:-3]  # Remove /v1 from the end
         embedding_url = f"{base_url}/v1/embeddings"
         
-        # Use text-embedding-3-small consistently for 1536 dimensions
-        model = 'text-embedding-3-small'
+        # Use text-embedding-v4 consistently for 1024 dimensions
+        model = 'text-embedding-v4'
         
         logger.info(f"Using embedding URL: {embedding_url}")
         logger.info(f"Using model: {model}")
@@ -397,6 +429,8 @@ class VectorDB:
         batch_size = 50  # Smaller batches for better error handling
         delay = 1  # Delay in seconds between batches
         total_indexed = 0
+        all_point_ids = []
+        all_contents = []
 
         async with aiohttp.ClientSession() as session:
             for i in range(0, len(final_chunks), batch_size):
@@ -433,6 +467,9 @@ class VectorDB:
                         )
                         logger.info(f"💾 Indexed {len(points)} documents into {self.collection_name} (batch {i//batch_size + 1})")
                         total_indexed += len(points)
+                        for p in points:
+                            all_point_ids.append(p.id)
+                            all_contents.append(p.payload.get("content", ""))
                     except Exception as e:
                         logger.error(f"❌ Error upserting batch to Qdrant: {str(e)}")
 
@@ -442,6 +479,8 @@ class VectorDB:
                     await asyncio.sleep(delay)
 
         logger.info(f"✅ Finished indexing {self.collection_name}. Total documents indexed: {total_indexed}")
+        if all_point_ids:
+            self._build_and_save_bm25_index(all_point_ids, all_contents)
 
     async def index_faq_docs(self):
         faq_url = "https://storage.googleapis.com/benchmarks-artifacts/travel-db/swiss_faq.md"
@@ -603,6 +642,11 @@ class VectorDB:
                         )
                         
                 logger.info(f"✅ Successfully indexed {len([p for p in points if p is not None])} FAQ documents into {self.collection_name}.")
+                valid_points = [p for p in points if p is not None]
+                if valid_points:
+                    doc_ids = [p.id for p in valid_points]
+                    contents = [p.payload.get("content", "") for p in valid_points]
+                    self._build_and_save_bm25_index(doc_ids, contents)
             except Exception as e:
                 logger.error(f"💥 Error upserting to Qdrant: {str(e)}")
                 raise
@@ -633,7 +677,7 @@ class VectorDB:
         
         # Primary models to test (based on working models from memory)
         primary_models = [
-            "text-embedding-3-small",  # Priority model for api2d.net compatibility
+            "text-embedding-v4",  # Priority model for api2d.net compatibility
             "text-embedding-3-large",
             "text-embedding-ada-002"
         ]

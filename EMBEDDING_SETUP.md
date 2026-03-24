@@ -44,7 +44,7 @@ If you want to test other parts of the system:
 ## Cost Considerations
 
 Official OpenAI embedding costs:
-- text-embedding-3-small: $0.02 per 1M tokens
+- text-embedding-v4: $0.02 per 1M tokens
 - text-embedding-3-large: $0.13 per 1M tokens  
 - text-embedding-ada-002: $0.10 per 1M tokens
 

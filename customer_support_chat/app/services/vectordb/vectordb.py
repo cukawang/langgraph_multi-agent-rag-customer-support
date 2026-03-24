@@ -18,13 +18,13 @@ class VectorDB:
         # Initialize OpenAI embeddings
         if settings.OPENAI_BASE_URL:
             self.embeddings = OpenAIEmbeddings(
-                model="text-embedding-3-small",
+                model="text-embedding-v4",
                 openai_api_key=settings.OPENAI_API_KEY,
                 openai_api_base=settings.OPENAI_BASE_URL
             )
         else:
             self.embeddings = OpenAIEmbeddings(
-                model="text-embedding-3-small",
+                model="text-embedding-v4",
                 openai_api_key=settings.OPENAI_API_KEY
             )
         self.create_collection()
@@ -33,7 +33,7 @@ class VectorDB:
         if not self.client.get_collection(collection_name=self.collection_name):
             self.client.create_collection(
                 collection_name=self.collection_name,
-                vectors_config=VectorParams(size=1536, distance=Distance.COSINE),
+                vectors_config=VectorParams(size=1024, distance=Distance.COSINE),
             )
             logger.info(f"Created new collection: {self.collection_name}")
         else:

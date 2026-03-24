@@ -27,7 +27,7 @@ settings = get_settings()
 
 # Jailbreak Guardrail Agent
 jailbreak_guardrail_agent = ChatOpenAI(
-    model="gpt-4o-mini", # Using a fast, cost-effective model for guardrails
+    model="qwen-plus", # Using a fast, cost-effective model for guardrails
     openai_api_key=settings.OPENAI_API_KEY,
     openai_api_base=settings.OPENAI_BASE_URL if settings.OPENAI_BASE_URL else None,
     temperature=0, # Deterministic output for safety checks
@@ -45,7 +45,7 @@ jailbreak_guardrail_agent_instructions = (
 
 # Relevance Guardrail Agent
 relevance_guardrail_agent = ChatOpenAI(
-    model="gpt-4o-mini", # Using a fast, cost-effective model for guardrails
+    model="qwen-plus", # Using a fast, cost-effective model for guardrails
     openai_api_key=settings.OPENAI_API_KEY,
     openai_api_base=settings.OPENAI_BASE_URL if settings.OPENAI_BASE_URL else None,
     temperature=0, # Deterministic output for relevance checks

@@ -1,53 +1,58 @@
-from vectorizer.app.vectordb.vectordb import VectorDB
-from customer_support_chat.app.core.settings import get_settings
-from langchain_core.tools import tool
+import re
 import logging
 from typing import List, Dict
 
-logger = logging.getLogger(__name__)
+from langchain_core.tools import tool
 
+from customer_support_chat.app.core.settings import get_settings
+from customer_support_chat.app.services.retrieval import hybrid_search_with_rerank
+
+logger = logging.getLogger(__name__)
 settings = get_settings()
-faq_vectordb = VectorDB(table_name="faq", collection_name="faq_collection")
+
+
+def _parse_faq_entry(content: str, score: float) -> Dict:
+    """Parse content into question/answer for FAQ entry."""
+    question = "General FAQ Information"
+    answer = content
+    category = "FAQ"
+    question_match = re.search(r"^\d+\. (.+?)(?=\n|$)", content, re.MULTILINE)
+    if question_match:
+        question = question_match.group(1).strip()
+        answer_start = content.find(question) + len(question)
+        answer = content[answer_start:].strip()
+    elif content.startswith("##"):
+        lines = content.split("\n", 1)
+        question = lines[0].replace("##", "").strip()
+        answer = lines[1] if len(lines) > 1 else "See section content for details."
+    return {
+        "question": question,
+        "answer": answer,
+        "category": category,
+        "chunk": content,
+        "similarity": score,
+    }
+
 
 @tool
 def search_faq(
     query: str,
-    limit: int = 2,
+    limit: int = 5,
 ) -> List[Dict]:
-    """Search for FAQ entries based on a natural language query."""
-    search_results = faq_vectordb.search(query, limit=limit)
-
+    """Search for FAQ entries using hybrid retrieval (dense + BM25) and Cross-Encoder reranking."""
+    results = hybrid_search_with_rerank(
+        "faq_collection",
+        query,
+        top_k_dense=20,
+        top_k_bm25=20,
+        top_k_final=limit,
+        use_rerank=True,
+    )
     faq_entries = []
-    for result in search_results:
-        payload = result.payload
-        content = payload.get("content", "")
-        
-        # Try to parse Q&A from content if it follows the numbered Q&A format
-        question = "General FAQ Information"
-        answer = content
-        category = "FAQ"
-        
-        # Look for numbered question pattern (e.g., "1. Can I receive...")
-        import re
-        question_match = re.search(r'^\d+\. (.+?)(?=\n|$)', content, re.MULTILINE)
-        if question_match:
-            question = question_match.group(1).strip()
-            # Extract answer (everything after the question)
-            answer_start = content.find(question) + len(question)
-            answer = content[answer_start:].strip()
-        elif content.startswith('##'):
-            # Handle section headers
-            lines = content.split('\n', 1)
-            question = lines[0].replace('##', '').strip()
-            answer = lines[1] if len(lines) > 1 else "See section content for details."
-        
-        faq_entries.append({
-            "question": question,
-            "answer": answer,
-            "category": category,
-            "chunk": content,
-            "similarity": result.score,
-        })
+    for r in results:
+        content = r.get("content", "")
+        score = r.get("score", 0.0)
+        faq_entries.append(_parse_faq_entry(content, score))
     return faq_entries
 
 @tool

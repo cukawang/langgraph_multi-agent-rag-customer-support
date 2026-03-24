@@ -25,10 +25,6 @@ from .excursions import (
     update_excursion,
     cancel_excursion,
 )
-# New tools for extended functionalities
-from .woocommerce import search_products, search_orders
-from .forms import submit_form
-from .blog import search_blog_posts
 
 __all__ = [
     "lookup_policy",
@@ -49,9 +45,4 @@ __all__ = [
     "book_excursion",
     "update_excursion",
     "cancel_excursion",
-    # New tools
-    "search_products",
-    "search_orders",
-    "submit_form",
-    "search_blog_posts",
 ]

@@ -1,25 +1,37 @@
 # main.py
 
+import asyncio
 import uuid
-import os  # Import os module for file operations
-from customer_support_chat.app.graph import multi_agentic_graph
+import os
+from langchain_core.messages import ToolMessage
 from customer_support_chat.app.services.utils import download_and_prepare_db
 from customer_support_chat.app.core.logger import logger
-from langchain_core.messages import ToolMessage, HumanMessage, AIMessage
 
-def main():
+
+async def async_main():
     # Ensure the database is downloaded and prepared
     download_and_prepare_db()
 
-    # Generate and save the graph visualization
+    # ------------------------------------------------------------------ #
+    # 1. 初始化高德地图 MCP 客户端，加载实时地图工具
+    # ------------------------------------------------------------------ #
+    from customer_support_chat.app.services.tools.amap_mcp import startup, shutdown, get_amap_tools
+    amap_tools = await startup()
+
+    # ------------------------------------------------------------------ #
+    # 2. 用 Amap 工具重新编译多智能体图
+    # ------------------------------------------------------------------ #
+    from customer_support_chat.app.graph import initialize
+    graph = initialize(amap_tools)
+
+    # ------------------------------------------------------------------ #
+    # 3. 生成并保存图可视化（可选）
+    # ------------------------------------------------------------------ #
     try:
-        # Generate the graph object with xray=True to include node details
-        graph = multi_agentic_graph.get_graph(xray=True)
-        # Draw the graph as a PNG image using Mermaid
-        graph_image = graph.draw_mermaid_png()
+        graph_obj = graph.get_graph(xray=True)
+        graph_image = graph_obj.draw_mermaid_png()
         graphs_dir = "./graphs"
-        if not os.path.exists(graphs_dir):
-            os.makedirs(graphs_dir)
+        os.makedirs(graphs_dir, exist_ok=True)
         image_path = os.path.join(graphs_dir, "multi-agent-rag-system-graph.png")
         with open(image_path, "wb") as f:
             f.write(graph_image)
@@ -28,18 +40,16 @@ def main():
         logger.error(f"An error occurred while generating the graph visualization: {e}")
         print("Graph visualization could not be generated. Continuing without it.")
 
-    # Generate a unique thread ID for the session
+    # ------------------------------------------------------------------ #
+    # 4. 主对话循环
+    # ------------------------------------------------------------------ #
     thread_id = str(uuid.uuid4())
-
-    # Configuration with passenger_id and thread_id
     config = {
         "configurable": {
-            "passenger_id": "5102 899977",  # Update with a valid passenger ID as needed
+            "passenger_id": "5102 899977",
             "thread_id": thread_id,
         }
     }
-
-    # Variable to track printed message IDs to avoid duplicates
     printed_message_ids = set()
 
     try:
@@ -49,8 +59,7 @@ def main():
                 print("Goodbye!")
                 break
 
-            # Process the user input through the graph
-            events = multi_agentic_graph.stream(
+            events = graph.stream(
                 {"messages": [("user", user_input)]}, config, stream_mode="values"
             )
 
@@ -61,43 +70,51 @@ def main():
                         message.pretty_print()
                         printed_message_ids.add(message.id)
 
-            # Check for interrupts
-            snapshot = multi_agentic_graph.get_state(config)
+            # Handle human-in-the-loop interrupts
+            snapshot = graph.get_state(config)
             while snapshot.next:
-                # Interrupt occurred before sensitive tool execution
                 user_input = input(
-                    "\nDo you approve of the above actions? Type 'y' to continue; otherwise, explain your requested changes.\n\n"
+                    "\nDo you approve of the above actions? Type 'y' to continue; "
+                    "otherwise, explain your requested changes.\n\n"
                 )
                 if user_input.strip().lower() == "y":
-                    # Continue execution
-                    result = multi_agentic_graph.invoke(None, config)
+                    result = graph.invoke(None, config)
                 else:
-                    # Provide feedback to the assistant
                     tool_call_id = snapshot.value["messages"][-1].tool_calls[0]["id"]
-                    result = multi_agentic_graph.invoke(
+                    result = graph.invoke(
                         {
                             "messages": [
                                 ToolMessage(
                                     tool_call_id=tool_call_id,
-                                    content=f"API call denied by user. Reasoning: '{user_input}'. Continue assisting, accounting for the user's input.",
+                                    content=(
+                                        f"API call denied by user. Reasoning: '{user_input}'. "
+                                        "Continue assisting, accounting for the user's input."
+                                    ),
                                 )
                             ]
                         },
                         config,
                     )
-                # Process the result to display any new messages
                 messages = result.get("messages", [])
                 for message in messages:
                     if message.id not in printed_message_ids:
                         message.pretty_print()
-                        printed_message_ids.add(message.id) 
-                        
-                # Update the snapshot
-                snapshot = multi_agentic_graph.get_state(config)
+                        printed_message_ids.add(message.id)
+                snapshot = graph.get_state(config)
 
     except Exception as e:
         logger.error(f"An error occurred: {e}")
         print("An unexpected error occurred. Please check the logs for more details.")
+    finally:
+        # ------------------------------------------------------------------ #
+        # 5. 关闭 MCP 客户端
+        # ------------------------------------------------------------------ #
+        await shutdown()
+
+
+def main():
+    asyncio.run(async_main())
+
 
 if __name__ == "__main__":
     main()
